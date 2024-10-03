@@ -41,15 +41,15 @@ struct HnswNode {
 
   HnswNode(NodeKey key, uint16_t level);
 
-  StatusOr<HnswNodeFieldMetadata> DecodeMetadata(const SearchKey& search_key, engine::Storage* storage) const;
-  void PutMetadata(HnswNodeFieldMetadata* node_meta, const SearchKey& search_key, engine::Storage* storage,
-                   rocksdb::WriteBatchBase* batch) const;
-  void DecodeNeighbours(const SearchKey& search_key, engine::Storage* storage);
+  StatusOr<HnswNodeFieldMetadata> DecodeMetadata(engine::Context& ctx, const SearchKey& search_key) const;
+  Status PutMetadata(HnswNodeFieldMetadata* node_meta, const SearchKey& search_key, engine::Storage* storage,
+                     rocksdb::WriteBatchBase* batch) const;
+  void DecodeNeighbours(engine::Context& ctx, const SearchKey& search_key);
 
   // For testing purpose
-  Status AddNeighbour(const NodeKey& neighbour_key, const SearchKey& search_key, engine::Storage* storage,
+  Status AddNeighbour(engine::Context& ctx, const NodeKey& neighbour_key, const SearchKey& search_key,
                       rocksdb::WriteBatchBase* batch) const;
-  Status RemoveNeighbour(const NodeKey& neighbour_key, const SearchKey& search_key, engine::Storage* storage,
+  Status RemoveNeighbour(engine::Context& ctx, const NodeKey& neighbour_key, const SearchKey& search_key,
                          rocksdb::WriteBatchBase* batch) const;
   friend struct HnswIndex;
 };
@@ -92,14 +92,15 @@ struct HnswIndex {
   std::mt19937 generator;
   double m_level_normalization_factor;
 
-  HnswIndex(const SearchKey& search_key, HnswVectorFieldMetadata* vector, engine::Storage* storage);
+  HnswIndex(const SearchKey& search_key, HnswVectorFieldMetadata* vector, engine::Storage* storage,
+            std::random_device::result_type seed = std::random_device()());
 
-  static StatusOr<std::vector<VectorItem>> DecodeNodesToVectorItems(const std::vector<NodeKey>& node_key,
+  static StatusOr<std::vector<VectorItem>> DecodeNodesToVectorItems(engine::Context& ctx,
+                                                                    const std::vector<NodeKey>& node_key,
                                                                     uint16_t level, const SearchKey& search_key,
-                                                                    engine::Storage* storage,
                                                                     const HnswVectorFieldMetadata* metadata);
   uint16_t RandomizeLayer();
-  StatusOr<NodeKey> DefaultEntryPoint(uint16_t level) const;
+  StatusOr<NodeKey> DefaultEntryPoint(engine::Context& ctx, uint16_t level) const;
   Status AddEdge(const NodeKey& node_key1, const NodeKey& node_key2, uint16_t layer,
                  ObserverOrUniquePtr<rocksdb::WriteBatchBase>& batch) const;
   Status RemoveEdge(const NodeKey& node_key1, const NodeKey& node_key2, uint16_t layer,
@@ -107,18 +108,21 @@ struct HnswIndex {
 
   StatusOr<std::vector<VectorItem>> SelectNeighbors(const VectorItem& vec, const std::vector<VectorItem>& vectors,
                                                     uint16_t layer) const;
-  StatusOr<std::vector<VectorItemWithDistance>> SearchLayerInternal(uint16_t level, const VectorItem& target_vector,
+  StatusOr<std::vector<VectorItemWithDistance>> SearchLayerInternal(engine::Context& ctx, uint16_t level,
+                                                                    const VectorItem& target_vector,
                                                                     uint32_t ef_runtime,
                                                                     const std::vector<NodeKey>& entry_points) const;
-  StatusOr<std::vector<VectorItem>> SearchLayer(uint16_t level, const VectorItem& target_vector, uint32_t ef_runtime,
-                                                const std::vector<NodeKey>& entry_points) const;
-  Status InsertVectorEntryInternal(std::string_view key, const kqir::NumericArray& vector,
+  StatusOr<std::vector<VectorItem>> SearchLayer(engine::Context& ctx, uint16_t level, const VectorItem& target_vector,
+                                                uint32_t ef_runtime, const std::vector<NodeKey>& entry_points) const;
+  Status InsertVectorEntryInternal(engine::Context& ctx, std::string_view key, const kqir::NumericArray& vector,
                                    ObserverOrUniquePtr<rocksdb::WriteBatchBase>& batch, uint16_t layer) const;
-  Status InsertVectorEntry(std::string_view key, const kqir::NumericArray& vector,
+  Status InsertVectorEntry(engine::Context& ctx, std::string_view key, const kqir::NumericArray& vector,
                            ObserverOrUniquePtr<rocksdb::WriteBatchBase>& batch);
-  Status DeleteVectorEntry(std::string_view key, ObserverOrUniquePtr<rocksdb::WriteBatchBase>& batch) const;
-  StatusOr<std::vector<KeyWithDistance>> KnnSearch(const kqir::NumericArray& query_vector, uint32_t k) const;
-  StatusOr<std::vector<KeyWithDistance>> ExpandSearchScope(const kqir::NumericArray& query_vector,
+  Status DeleteVectorEntry(engine::Context& ctx, std::string_view key,
+                           ObserverOrUniquePtr<rocksdb::WriteBatchBase>& batch) const;
+  StatusOr<std::vector<KeyWithDistance>> KnnSearch(engine::Context& ctx, const kqir::NumericArray& query_vector,
+                                                   uint32_t k) const;
+  StatusOr<std::vector<KeyWithDistance>> ExpandSearchScope(engine::Context& ctx, const kqir::NumericArray& query_vector,
                                                            std::vector<redis::KeyWithDistance>&& initial_keys,
                                                            std::unordered_set<std::string>& visited) const;
 };

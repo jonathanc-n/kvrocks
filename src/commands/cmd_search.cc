@@ -181,8 +181,8 @@ class CommandFTCreate : public Commander {
 
   Status Execute(Server *srv, Connection *conn, std::string *output) override {
     index_info_->ns = conn->GetNamespace();
-
-    GET_OR_RET(srv->index_mgr.Create(std::move(index_info_)));
+    engine::Context ctx(srv->storage);
+    GET_OR_RET(srv->index_mgr.Create(ctx, std::move(index_info_)));
 
     output->append(redis::SimpleString("OK"));
     return Status::OK();
@@ -254,7 +254,7 @@ static StatusOr<CommandParserWithNode> ParseSQLQuery(const std::vector<std::stri
 }
 
 class CommandFTExplainSQL : public Commander {
-  Status Parse(const std::vector<std::string> &args) override {
+  Status Parse([[maybe_unused]] const std::vector<std::string> &args) override {
     auto [parser, ir] = GET_OR_RET(ParseSQLQuery(args_));
     ir_ = std::move(ir);
 
@@ -481,7 +481,8 @@ class CommandFTDrop : public Commander {
 };
 
 REDIS_REGISTER_COMMANDS(Search,
-                        MakeCmdAttr<CommandFTCreate>("ft.create", -2, "write exclusive no-multi no-script", 0, 0, 0),
+                        MakeCmdAttr<CommandFTCreate>("ft.create", -2, "write exclusive no-multi no-script slow", 0, 0,
+                                                     0),
                         MakeCmdAttr<CommandFTSearchSQL>("ft.searchsql", -2, "read-only", 0, 0, 0),
                         MakeCmdAttr<CommandFTSearch>("ft.search", -3, "read-only", 0, 0, 0),
                         MakeCmdAttr<CommandFTExplainSQL>("ft.explainsql", -2, "read-only", 0, 0, 0),
