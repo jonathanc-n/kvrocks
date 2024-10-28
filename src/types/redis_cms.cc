@@ -39,10 +39,8 @@ rocksdb::Status CMS::IncrBy(engine::Context &ctx, const Slice &user_key, const s
   CountMinSketchMetadata metadata{};
   rocksdb::Status s = GetMetadata(ctx, ns_key, &metadata);
 
-  if (s.IsNotFound()) {
-    return rocksdb::Status::NotFound();
-  }
   if (!s.ok()) {
+    // If s.NotFound() or !ok(), we should return the error directly.
     return s;
   }
 
@@ -51,12 +49,15 @@ rocksdb::Status CMS::IncrBy(engine::Context &ctx, const Slice &user_key, const s
   batch->PutLogData(log_data.Encode());
 
   CMSketch cms(metadata.width, metadata.depth, metadata.counter, metadata.array);
-
+  counters->reserve(elements.size());
   for (const auto &element : elements) {
-    if (element.value > 0 && metadata.counter > std::numeric_limits<int64_t>::max() - element.value) {
+    // TODO(mwish): should we put the parsing result outside?
+    if (element.value > 0 &&
+        metadata.counter > static_cast<uint64_t>(std::numeric_limits<int64_t>::max() - element.value)) {
       return rocksdb::Status::InvalidArgument("Overflow error: IncrBy would result in counter overflow");
     }
     uint32_t local_counter = cms.IncrBy(element.key, element.value);
+    counters->push_back(local_counter);
     metadata.counter += element.value;
   }
 
@@ -226,18 +227,13 @@ rocksdb::Status CMS::Query(engine::Context &ctx, const Slice &user_key, const st
 
   LockGuard guard(storage_->GetLockManager(), ns_key);
   CountMinSketchMetadata metadata{};
-
   rocksdb::Status s = GetMetadata(ctx, ns_key, &metadata);
-
-  if (s.IsNotFound()) {
-    return rocksdb::Status::NotFound();
-  }
   if (!s.ok()) {
+    // If s.NotFound() or !ok(), we should return the error directly.
     return s;
   }
 
   CMSketch cms(metadata.width, metadata.depth, metadata.counter, metadata.array);
-
   for (size_t i = 0; i < elements.size(); ++i) {
     counters[i] = cms.Query(elements[i]);
   }

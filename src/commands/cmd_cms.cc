@@ -33,6 +33,10 @@ namespace redis {
 ///
 /// The `key` should be an existing Count-Min Sketch key,
 /// otherwise, the command will return an error.
+///
+/// The output should be an array of integers, each integer
+/// means the counter value after the increment. If the increment
+/// overflows, the return value will be `"CMS: INCRBY overflow"`.
 class CommandCMSIncrBy final : public Commander {
  public:
   Status Execute(Server *srv, Connection *conn, std::string *output) override {
@@ -62,9 +66,15 @@ class CommandCMSIncrBy final : public Commander {
     if (!s.ok()) {
       return {Status::RedisExecErr, s.ToString()};
     }
-
-    // TODO(mwish): adjust the output
-    *output = redis::SimpleString("OK");
+    std::vector<std::string> strs;
+    for (uint32_t counter : counters) {
+      if (counter == std::numeric_limits<uint32_t>::max()) {
+        strs.push_back(redis::Error({Status::RedisExecErr, "CMS: INCRBY overflow"}));
+      } else {
+        strs.push_back(redis::Integer(counter));
+      }
+    }
+    *output = redis::Array(strs);
     return Status::OK();
   }
 };
@@ -96,6 +106,8 @@ class CommandCMSInfo final : public Commander {
 };
 
 /// CMS.INITBYDIM key width depth
+///
+/// If the key already exists, the command will return an error.
 class CommandCMSInitByDim final : public Commander {
  public:
   Status Execute(Server *srv, Connection *conn, std::string *output) override {
@@ -125,6 +137,8 @@ class CommandCMSInitByDim final : public Commander {
 };
 
 /// CMS.INITBYPROB key error probability
+///
+/// If the key already exists, the command will return an error.
 class CommandCMSInitByProb final : public Commander {
  public:
   Status Execute(Server *srv, Connection *conn, std::string *output) override {
@@ -178,6 +192,7 @@ class CommandCMSMerge final : public Commander {
 
     bool weights_found = false;
     while (parser.Good()) {
+      // Parse "WEIGHTS" if exists.
       if (parser.EatEqICase("WEIGHTS")) {
         if (weights_found) {
           return {Status::RedisParseErr, "WEIGHTS option cannot be specified multiple times"};
@@ -218,7 +233,7 @@ class CommandCMSMerge final : public Commander {
 
  private:
   Slice destination_;
-  int num_keys_;
+  int num_keys_{0};
   std::vector<Slice> src_keys_;
   std::vector<uint32_t> src_weights_;
 };
@@ -229,7 +244,6 @@ class CommandCMSQuery final : public Commander {
   Status Execute(Server *srv, Connection *conn, std::string *output) override {
     redis::CMS cms(srv->storage, conn->GetNamespace());
     engine::Context ctx(srv->storage);
-    rocksdb::Status s;
 
     std::vector<uint32_t> counters{};
     std::vector<std::string> elements;
@@ -238,8 +252,7 @@ class CommandCMSQuery final : public Commander {
       elements.emplace_back(args_[i]);
     }
 
-    s = cms.Query(ctx, args_[1], elements, counters);
-
+    rocksdb::Status s = cms.Query(ctx, args_[1], elements, counters);
     if (!s.ok()) {
       return {Status::RedisExecErr, s.ToString()};
     }
@@ -247,10 +260,9 @@ class CommandCMSQuery final : public Commander {
     std::vector<std::string> output_values;
     output_values.reserve(counters.size());
     for (const auto &counter : counters) {
-      output_values.emplace_back(std::to_string(counter));
+      output_values.emplace_back(Integer(counter));
     }
-
-    *output = redis::ArrayOfBulkStrings(output_values);
+    *output = redis::Array(output_values);
 
     return Status::OK();
   }

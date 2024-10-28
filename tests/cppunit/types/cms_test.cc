@@ -29,6 +29,7 @@
 
 class RedisCMSketchTest : public TestBase {
  protected:
+  using IncrByPair = redis::CMS::IncrByPair;
   explicit RedisCMSketchTest() : TestBase() { cms_ = std::make_unique<redis::CMS>(storage_.get(), "cms_ns"); }
   ~RedisCMSketchTest() override = default;
 
@@ -61,9 +62,11 @@ TEST_F(RedisCMSketchTest, CMSInitByDim) {
 }
 
 TEST_F(RedisCMSketchTest, CMSIncrBy) {
-  std::unordered_map<std::string, uint64_t> elements = {{"apple", 2}, {"banana", 3}, {"cherry", 1}};
+  std::vector<IncrByPair> elements = {{"apple", 2}, {"banana", 3}, {"cherry", 1}};
+  // TODO(mwish): check the responses.
+  std::vector<uint32_t> responses;
   ASSERT_TRUE(cms_->InitByDim(*ctx_, "cms", 100, 5).ok());
-  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms", elements).ok());
+  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms", elements, &responses).ok());
 
   std::vector<uint32_t> counts;
   ASSERT_TRUE(cms_->Query(*ctx_, "cms", {"apple", "banana", "cherry"}, counts).ok());
@@ -78,9 +81,10 @@ TEST_F(RedisCMSketchTest, CMSIncrBy) {
 }
 
 TEST_F(RedisCMSketchTest, CMSQuery) {
-  std::unordered_map<std::string, uint64_t> elements = {{"orange", 5}, {"grape", 3}, {"melon", 2}};
+  std::vector<IncrByPair> elements = {{"orange", 5}, {"grape", 3}, {"melon", 2}};
+  std::vector<uint32_t> responses;
   ASSERT_TRUE(cms_->InitByDim(*ctx_, "cms", 100, 5).ok());
-  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms", elements).ok());
+  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms", elements, &responses).ok());
 
   std::vector<uint32_t> counts;
   ASSERT_TRUE(cms_->Query(*ctx_, "cms", {"orange", "grape", "melon", "nonexistent"}, counts).ok());
@@ -114,14 +118,15 @@ TEST_F(RedisCMSketchTest, CMSInitByProb) {
 }
 
 TEST_F(RedisCMSketchTest, CMSMultipleKeys) {
-  std::unordered_map<std::string, uint64_t> elements1 = {{"apple", 2}, {"banana", 3}};
-  std::unordered_map<std::string, uint64_t> elements2 = {{"cherry", 1}, {"date", 4}};
+  std::vector<IncrByPair> elements1 = {{"apple", 2}, {"banana", 3}};
+  std::vector<IncrByPair> elements2 = {{"cherry", 1}, {"date", 4}};
+  std::vector<uint32_t> responses;
 
   ASSERT_TRUE(cms_->InitByDim(*ctx_, "cms1", 100, 5).ok());
   ASSERT_TRUE(cms_->InitByDim(*ctx_, "cms2", 100, 5).ok());
 
-  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms1", elements1).ok());
-  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms2", elements2).ok());
+  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms1", elements1, &responses).ok());
+  ASSERT_TRUE(cms_->IncrBy(*ctx_, "cms2", elements2, &responses).ok());
 
   std::vector<uint32_t> counts1, counts2;
   ASSERT_TRUE(cms_->Query(*ctx_, "cms1", {"apple", "banana"}, counts1).ok());
